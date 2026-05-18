@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DentHive</title>
+  <link rel="stylesheet" href="/css/theme.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">DentHive</div>
+    <nav class="nav">
+      <a href="#about">About</a>
+      <a href="#services">Services</a>
+      <a href="#stats">Stats</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <h1>Modern clinic workflow. Clear patient transparency.</h1>
+        <p>Role-based dashboards for doctors and secretaries, plus a live patient queue portal.</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="/doctor-login.html">Doctor Login</a>
+          <a class="btn primary" href="/secretary-login.html">Secretary Login</a>
+          <a class="btn" href="/patient-login.html">Patient Login</a>
+        </div>
+        <div class="fineprint">White & Yellow dental clinic theme • Responsive UI • Smooth transitions</div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="card glow">
+          <div class="emoji">🦷</div>
+          <div class="muted">Clean. Clinical. Connected.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="about" class="section">
+      <h2>About DentHive</h2>
+      <p>
+        DentHive streamlines patient management, queue orchestration, clinical documentation, and real-time queue visibility.
+        Built with Node.js + Express + MongoDB and a vanilla JavaScript frontend.
+      </p>
+    </section>
+
+    <section id="services" class="section">
+      <h2>Services</h2>
+      <div class="grid">
+        <div class="tile"><strong>Doctor</strong><span>Consultations, notes, records, clinical trends</span></div>
+        <div class="tile"><strong>Secretary</strong><span>Queue flow, registrations, appointments, daily orchestration</span></div>
+        <div class="tile"><strong>Patient</strong><span>Live queue status and access to personal dental history</span></div>
+      </div>
+    </section>
+
+    <section id="stats" class="section">
+      <h2>Clinic statistics</h2>
+      <div class="grid stats">
+        <div class="stat"><div class="num" id="statPatients">—</div><div class="lbl">Total patients</div></div>
+        <div class="stat"><div class="num" id="statWaiting">—</div><div class="lbl">Patients waiting</div></div>
+        <div class="stat"><div class="num" id="statInProgress">—</div><div class="lbl">In progress</div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">© DentHive (localhost)</footer>
+
+  <script>
+    async function refreshStats() {
+      try {
+        // Minimal initial stats via queues endpoint; may be empty on first run.
+        const res = await fetch('/health');
+        if (!res.ok) return;
+      } catch {}
+    }
+    refreshStats();
+  </script>
+</body>
+</html>
+

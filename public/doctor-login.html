@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doctor Login • DentHive</title>
+  <link rel="stylesheet" href="/css/theme.css" />
+</head>
+<body>
+  <main class="auth-wrap">
+    <div class="auth-card">
+      <h1>Doctor Login</h1>
+      <p class="muted">Seed user: <strong>doctor1</strong> / <strong>Doctor123!</strong></p>
+
+      <form id="form">
+        <label>Username</label>
+        <input id="username" class="input" placeholder="doctor1" required />
+
+        <label>Password</label>
+        <input id="password" class="input" type="password" placeholder="Doctor123!" required />
+
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+
+      <div id="err" class="err" role="alert"></div>
+    </div>
+  </main>
+
+  <script src="/js/auth.js"></script>
+  <style>
+    .auth-wrap{ padding:40px 18px; max-width:900px; margin:0 auto; }
+    .auth-card{ border:1px solid var(--border); border-radius:18px; padding:18px; background:#fff; box-shadow: var(--shadow); }
+    label{ display:block; margin-top:12px; font-weight:650; }
+    .input{ width:100%; padding:12px; border-radius:12px; border:1px solid var(--border); margin-top:6px; }
+    .err{ margin-top:12px; color:#b91c1c; font-weight:650; }
+    .muted{ color:var(--muted); }
+  </style>
+</body>
+</html>
+
