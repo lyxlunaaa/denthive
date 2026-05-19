@@ -1,48 +1,49 @@
 import { apiFetch } from './api.js';
 
 const ID_PREFIX = "DH-";
+let manualIncrement = 0; // Used to skip IDs if collisions occur
 
-// --- 1. ID GENERATION LOGIC ---
-// This function determines what the NEXT ID should be based on current records
-function getNextId(patients = []) {
-  let highestNum = 1000; // Starting base number
-  
-  if (Array.isArray(patients)) {
-    patients.forEach(p => {
-      if (p.displayId && p.displayId.startsWith(ID_PREFIX)) {
-        const num = parseInt(p.displayId.replace(ID_PREFIX, ''));
-        if (!isNaN(num) && num > highestNum) highestNum = num;
-      }
-    });
-  }
-  return `${ID_PREFIX}${highestNum + 1}`;
-}
-
-// --- 2. MAIN SYNC FUNCTION ---
-const refresh = async () => {
+/**
+ * CORE LOGIC: Fetches patients and calculates the TRUE next ID.
+ */
+async function refreshDashboard() {
   try {
-    // 1. Set a "Safe Default" immediately if field is empty
-    const idInput = document.getElementById('regDisplayId');
-    if (!idInput.value) idInput.value = getNextId([]);
-
-    // 2. Fetch data from server
+    // 1. Fetch data from server
     const patients = await apiFetch('/api/patients').catch(() => []);
     const queueData = await apiFetch('/api/queues/status').catch(() => ({ waiting: [], inProgress: [] }));
 
-    // 3. Update the Auto-Increment field with the REAL next number
-    idInput.value = getNextId(patients);
+    // 2. AUTO-INCREMENT LOGIC
+    let highestNum = 1000; 
+    if (Array.isArray(patients) && patients.length > 0) {
+      patients.forEach(p => {
+        if (p.displayId && p.displayId.startsWith(ID_PREFIX)) {
+          const numPart = parseInt(p.displayId.replace(ID_PREFIX, ''));
+          if (!isNaN(numPart) && numPart > highestNum) {
+            highestNum = numPart;
+          }
+        }
+      });
+    }
+    
+    // Set the ID field: Highest found + manual skips + 1
+    const nextIdValue = `${ID_PREFIX}${highestNum + manualIncrement + 1}`;
+    document.getElementById('regDisplayId').value = nextIdValue;
 
-    // 4. Update Directory Table
+    // 3. RENDER PATIENT DIRECTORY
     const dirBody = document.getElementById('dirTable');
-    dirBody.innerHTML = patients.map(p => `
-      <tr>
-        <td><span class="id-badge">${p.displayId}</span></td>
-        <td>${p.fullName}</td>
-        <td><button class="btn btn-sm" onclick="window.copyToQ('${p.displayId}')">Enqueue</button></td>
-      </tr>
-    `).join('') || '<tr><td colspan="3" class="muted">No patients found.</td></tr>';
+    if (patients.length === 0) {
+        dirBody.innerHTML = '<tr><td colspan="3" class="muted">No records found. (Check MongoDB for hidden records)</td></tr>';
+    } else {
+        dirBody.innerHTML = patients.map(p => `
+          <tr>
+            <td><span class="id-badge">${p.displayId || 'N/A'}</span></td>
+            <td>${p.fullName}</td>
+            <td><button class="btn btn-sm" onclick="window.copyToQ('${p.displayId}')">Enqueue</button></td>
+          </tr>
+        `).join('');
+    }
 
-    // 5. Update Queue Table
+    // 4. RENDER QUEUE
     const qBody = document.getElementById('qTable');
     const allQ = [...(queueData.inProgress || []), ...(queueData.waiting || [])];
     qBody.innerHTML = allQ.map((p, i) => `
@@ -53,24 +54,26 @@ const refresh = async () => {
         <td><button class="btn-danger" onclick="window.removeFromQ('${p.id}')">Remove</button></td>
       </tr>
     `).join('') || '<tr><td colspan="4" class="muted">Queue is empty.</td></tr>';
-
   } catch (err) {
-    console.error("Refresh Error:", err);
+    console.error("Sync Error:", err);
   }
+}
+
+/**
+ * NEW FEATURE: Allows secretary to manually skip an ID if the server says it exists.
+ */
+window.skipId = () => {
+    manualIncrement++;
+    refreshDashboard();
 };
 
-// --- 3. FORM SUBMISSION (REGISTER) ---
+/**
+ * ACTION: REGISTER PATIENT
+ */
 document.getElementById('regForm').onsubmit = async (e) => {
   e.preventDefault();
-  
-  const idValue = document.getElementById('regDisplayId').value;
   const status = document.getElementById('regStatus');
-
-  // ABSOLUTE GUARD: Don't submit if ID is blank
-  if (!idValue) {
-    alert("Error: Auto-Increment ID failed to generate. Please refresh the page.");
-    return;
-  }
+  const idValue = document.getElementById('regDisplayId').value;
 
   status.style.display = "block";
   status.textContent = "Registering...";
@@ -79,9 +82,9 @@ document.getElementById('regForm').onsubmit = async (e) => {
   try {
     const payload = {
       displayId: idValue,
-      fullName: document.getElementById('regFullName').value,
-      phone: document.getElementById('regPhone').value,
-      email: document.getElementById('regEmail').value
+      fullName: document.getElementById('regFullName').value.trim(),
+      phone: document.getElementById('regPhone').value.trim(),
+      email: document.getElementById('regEmail').value.trim()
     };
 
     const res = await apiFetch('/api/patients', { 
@@ -89,31 +92,39 @@ document.getElementById('regForm').onsubmit = async (e) => {
       body: JSON.stringify(payload) 
     });
 
-    status.textContent = `Registered Successfully: ${res.patient.displayId}`;
+    // Reset manual skip on success
+    manualIncrement = 0;
+    status.textContent = `Success! Registered: ${res.patient.displayId}`;
     status.style.backgroundColor = "#dcfce7";
     status.style.color = "#166534";
     
     e.target.reset();
-    await refresh(); // Immediately get the next number
+    await refreshDashboard(); 
   } catch (err) {
-    status.textContent = "Error: " + err.message;
+    status.textContent = "Failed: " + err.message;
     status.style.backgroundColor = "#fee2e2";
     status.style.color = "#b91c1c";
-    alert("Registration Failed: " + err.message);
+
+    // If ID exists, give an easy button to fix it
+    if (err.message.includes("already exists")) {
+        status.innerHTML = `${err.message}. <button onclick="window.skipId()" style="background:#b91c1c; color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer">Try Next ID</button>`;
+    }
   }
 };
 
-// --- 4. OTHER FEATURES (ENQUEUE, REMOVE, SEARCH) ---
+/**
+ * ACTIONS: ENQUEUE, REMOVE, SEARCH
+ */
 document.getElementById('qBtn').onclick = async () => {
   const idInput = document.getElementById('qIdInput');
-  if (!idInput.value) return alert("Select a patient to enqueue.");
+  if (!idInput.value) return alert("Please enter or select a patient ID.");
   try {
     await apiFetch('/api/queues/enqueue', { 
       method: 'POST', 
       body: JSON.stringify({ displayId: idInput.value }) 
     });
     idInput.value = '';
-    refresh();
+    refreshDashboard();
   } catch (err) {
     alert(err.message);
   }
@@ -127,7 +138,7 @@ window.copyToQ = (id) => {
 window.removeFromQ = async (id) => {
   if (confirm("Remove patient from queue?")) {
     await apiFetch(`/api/queues/remove/${id}`, { method: 'DELETE' });
-    refresh();
+    refreshDashboard();
   }
 };
 
@@ -138,6 +149,5 @@ window.filter = () => {
   });
 };
 
-// Initial Start
-refresh();
-setInterval(refresh, 10000); // Sync every 10s
+refreshDashboard();
+setInterval(refreshDashboard, 15000);
