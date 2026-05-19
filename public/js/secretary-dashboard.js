@@ -1,147 +1,143 @@
 import { apiFetch } from './api.js';
 
-function byId(id) {
-  return document.getElementById(id);
-}
+const ID_PREFIX = "DH-";
 
-function setMsg(el, msg, kind) {
-  if (!el) return;
-  el.textContent = msg || '';
-  el.style.display = msg ? 'block' : 'none';
-  if (kind === 'error') el.style.color = '#b91c1c';
-  if (kind === 'success') el.style.color = 'inherit';
-}
-
-async function loadQueue() {
-  const el = byId('queueView');
-  if (!el) return;
-
-  try {
-    const data = await apiFetch('/api/queues/status');
-    el.textContent = JSON.stringify(data, null, 2);
-  } catch (e) {
-    el.textContent = `Error: ${e.message}`;
+// --- 1. ID GENERATION LOGIC ---
+// This function determines what the NEXT ID should be based on current records
+function getNextId(patients = []) {
+  let highestNum = 1000; // Starting base number
+  
+  if (Array.isArray(patients)) {
+    patients.forEach(p => {
+      if (p.displayId && p.displayId.startsWith(ID_PREFIX)) {
+        const num = parseInt(p.displayId.replace(ID_PREFIX, ''));
+        if (!isNaN(num) && num > highestNum) highestNum = num;
+      }
+    });
   }
+  return `${ID_PREFIX}${highestNum + 1}`;
 }
 
-async function registerPatient(e) {
+// --- 2. MAIN SYNC FUNCTION ---
+const refresh = async () => {
+  try {
+    // 1. Set a "Safe Default" immediately if field is empty
+    const idInput = document.getElementById('regDisplayId');
+    if (!idInput.value) idInput.value = getNextId([]);
+
+    // 2. Fetch data from server
+    const patients = await apiFetch('/api/patients').catch(() => []);
+    const queueData = await apiFetch('/api/queues/status').catch(() => ({ waiting: [], inProgress: [] }));
+
+    // 3. Update the Auto-Increment field with the REAL next number
+    idInput.value = getNextId(patients);
+
+    // 4. Update Directory Table
+    const dirBody = document.getElementById('dirTable');
+    dirBody.innerHTML = patients.map(p => `
+      <tr>
+        <td><span class="id-badge">${p.displayId}</span></td>
+        <td>${p.fullName}</td>
+        <td><button class="btn btn-sm" onclick="window.copyToQ('${p.displayId}')">Enqueue</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="3" class="muted">No patients found.</td></tr>';
+
+    // 5. Update Queue Table
+    const qBody = document.getElementById('qTable');
+    const allQ = [...(queueData.inProgress || []), ...(queueData.waiting || [])];
+    qBody.innerHTML = allQ.map((p, i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td><span class="id-badge">${p.displayId}</span></td>
+        <td>${p.patientName}</td>
+        <td><button class="btn-danger" onclick="window.removeFromQ('${p.id}')">Remove</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" class="muted">Queue is empty.</td></tr>';
+
+  } catch (err) {
+    console.error("Refresh Error:", err);
+  }
+};
+
+// --- 3. FORM SUBMISSION (REGISTER) ---
+document.getElementById('regForm').onsubmit = async (e) => {
   e.preventDefault();
-  const form = e.currentTarget;
+  
+  const idValue = document.getElementById('regDisplayId').value;
+  const status = document.getElementById('regStatus');
 
-  const regDisplayId = byId('regDisplayId');
-  const regFullName = byId('regFullName');
-  const regPhone = byId('regPhone');
-  const regEmail = byId('regEmail');
+  // ABSOLUTE GUARD: Don't submit if ID is blank
+  if (!idValue) {
+    alert("Error: Auto-Increment ID failed to generate. Please refresh the page.");
+    return;
+  }
 
-  const errEl = byId('registerErr');
-  const okEl = byId('registerSuccess');
-
-  setMsg(errEl, '', 'error');
-  setMsg(okEl, '', 'success');
+  status.style.display = "block";
+  status.textContent = "Registering...";
+  status.style.backgroundColor = "#f1f5f9";
 
   try {
     const payload = {
-      displayId: regDisplayId.value,
-      fullName: regFullName.value,
-      phone: regPhone.value,
-      email: regEmail.value
+      displayId: idValue,
+      fullName: document.getElementById('regFullName').value,
+      phone: document.getElementById('regPhone').value,
+      email: document.getElementById('regEmail').value
     };
 
-    const data = await apiFetch('/api/patients', {
-      method: 'POST',
-      body: JSON.stringify(payload)
+    const res = await apiFetch('/api/patients', { 
+      method: 'POST', 
+      body: JSON.stringify(payload) 
     });
 
-    // Backend returns { patient, tempPassword }
-    setMsg(okEl, data?.tempPassword ? `Registered. Temp password: ${data.tempPassword}` : 'Registered successfully.', 'success');
-    form.reset();
-    await loadQueue();
-  } catch (e2) {
-    setMsg(errEl, e2.message || 'Registration failed', 'error');
+    status.textContent = `Registered Successfully: ${res.patient.displayId}`;
+    status.style.backgroundColor = "#dcfce7";
+    status.style.color = "#166534";
+    
+    e.target.reset();
+    await refresh(); // Immediately get the next number
+  } catch (err) {
+    status.textContent = "Error: " + err.message;
+    status.style.backgroundColor = "#fee2e2";
+    status.style.color = "#b91c1c";
+    alert("Registration Failed: " + err.message);
   }
-}
+};
 
-async function editPatient(e) {
-  e.preventDefault();
-  const form = e.currentTarget;
-
-  const editPatientId = byId('editPatientId');
-  const editFullName = byId('editFullName');
-  const editPhone = byId('editPhone');
-  const editEmail = byId('editEmail');
-
-  const errEl = byId('editErr');
-  const okEl = byId('editSuccess');
-
-  setMsg(errEl, '', 'error');
-  setMsg(okEl, '', 'success');
-
+// --- 4. OTHER FEATURES (ENQUEUE, REMOVE, SEARCH) ---
+document.getElementById('qBtn').onclick = async () => {
+  const idInput = document.getElementById('qIdInput');
+  if (!idInput.value) return alert("Select a patient to enqueue.");
   try {
-    const payload = {
-      fullName: editFullName.value,
-      phone: editPhone.value,
-      email: editEmail.value
-    };
-
-    // Remove empty strings so backend keeps existing values
-    for (const k of Object.keys(payload)) {
-      if (payload[k] === undefined) continue;
-      if (String(payload[k]).trim() === '') delete payload[k];
-    }
-
-    const data = await apiFetch(`/api/patients/${editPatientId.value}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload)
+    await apiFetch('/api/queues/enqueue', { 
+      method: 'POST', 
+      body: JSON.stringify({ displayId: idInput.value }) 
     });
-
-    setMsg(okEl, data?.patient ? 'Patient updated successfully.' : 'Saved.', 'success');
-    form.reset();
-    await loadQueue();
-  } catch (e2) {
-    setMsg(errEl, e2.message || 'Update failed', 'error');
+    idInput.value = '';
+    refresh();
+  } catch (err) {
+    alert(err.message);
   }
-}
+};
 
-async function enqueuePatient(e) {
-  e.preventDefault();
-  const form = e.currentTarget;
+window.copyToQ = (id) => {
+    document.getElementById('qIdInput').value = id;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
-  const queuePatientId = byId('queuePatientId');
-  const errEl = byId('queueErr');
-  const okEl = byId('queueSuccess');
-
-  setMsg(errEl, '', 'error');
-  setMsg(okEl, '', 'success');
-
-  try {
-    const payload = { patientId: queuePatientId.value };
-    const data = await apiFetch('/api/queues/enqueue', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-
-    setMsg(okEl, data?.queue ? `Enqueued. Queue #${data.queue.queueNumber}` : 'Enqueued successfully.', 'success');
-    form.reset();
-    await loadQueue();
-  } catch (e2) {
-    setMsg(errEl, e2.message || 'Enqueue failed', 'error');
+window.removeFromQ = async (id) => {
+  if (confirm("Remove patient from queue?")) {
+    await apiFetch(`/api/queues/remove/${id}`, { method: 'DELETE' });
+    refresh();
   }
-}
+};
 
-function wire() {
-  const refreshBtn = byId('refreshBtn');
-  const registerForm = byId('registerForm');
-  const editForm = byId('editForm');
-  const queueForm = byId('queueForm');
+window.filter = () => {
+  const val = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('#dirTable tr').forEach(row => {
+    row.style.display = row.innerText.toLowerCase().includes(val) ? '' : 'none';
+  });
+};
 
-  if (refreshBtn) refreshBtn.addEventListener('click', loadQueue);
-  if (registerForm) registerForm.addEventListener('submit', registerPatient);
-  if (editForm) editForm.addEventListener('submit', editPatient);
-  if (queueForm) queueForm.addEventListener('submit', enqueuePatient);
-
-  loadQueue();
-  setInterval(loadQueue, 5000);
-}
-
-wire();
-
+// Initial Start
+refresh();
+setInterval(refresh, 10000); // Sync every 10s
