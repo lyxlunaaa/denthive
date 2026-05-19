@@ -1,5 +1,13 @@
 (function(){
-  const role = window.__ROLE__ || (location.pathname.includes('doctor-login') ? 'doctor' : 'doctor');
+  const inferredRole = (() => {
+    const p = String(location.pathname || '');
+    if (p.includes('doctor-login')) return 'doctor';
+    if (p.includes('secretary-login')) return 'secretary';
+    if (p.includes('patient-login')) return 'patient';
+    return null;
+  })();
+
+  const role = window.__ROLE__ || inferredRole || 'doctor';
   const form = document.getElementById('form');
   const err = document.getElementById('err');
 
@@ -41,4 +49,5 @@
     }
   });
 })();
+
 
